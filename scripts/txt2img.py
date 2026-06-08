@@ -7,6 +7,7 @@ from tqdm import tqdm, trange
 from einops import rearrange
 from torchvision.utils import make_grid
 
+from ldm.device_utils import get_torch_device
 from ldm.util import instantiate_from_config
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.models.diffusion.plms import PLMSSampler
@@ -24,7 +25,7 @@ def load_model_from_config(config, ckpt, verbose=False):
         print("unexpected keys:")
         print(u)
 
-    model.cuda()
+    model = model.to(get_torch_device())
     model.eval()
     return model
 
@@ -119,7 +120,7 @@ if __name__ == "__main__":
     model = load_model_from_config(config, opt.ckpt_path)  # TODO: check path
     model.embedding_manager.load(opt.embedding_path)
 
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    device = get_torch_device()
     model = model.to(device)
 
     if opt.plms:

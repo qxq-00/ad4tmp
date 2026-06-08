@@ -6,6 +6,7 @@ from transformers import CLIPTokenizer
 from functools import partial
 from ldm.models.vit import VisionTransformer as VIT
 from ldm.models.psp_encoder.encoders import psp_encoders
+from ldm.device_utils import get_module_device, get_torch_device
 import os
 from torchvision.utils import save_image
 DEFAULT_PLACEHOLDER_TOKEN = ["*"]
@@ -53,6 +54,7 @@ class EmbeddingManager(nn.Module):
         super().__init__()
         self.return_position=return_position
         self.spatial_encoder = False
+        self.device = get_torch_device()
         self.string_to_token_dict = {}
 
         self.string_to_param_dict = nn.ParameterDict()
@@ -101,7 +103,7 @@ class EmbeddingManager(nn.Module):
                         torch.rand(size=(num_vectors_per_token, token_dim), requires_grad=True))
                 self.string_to_token_dict[placeholder_string] = token
                 self.string_to_param_dict[name] = token_params
-        self.string_to_param_dict=self.string_to_param_dict.cuda()
+        self.string_to_param_dict = self.string_to_param_dict.to(self.device)
 
     def forward(
             self,
@@ -188,7 +190,7 @@ class EmbeddingManager(nn.Module):
         return embedded_text,position
     def prepare_spatial_encoder(self,text_num=4):
         self.spatial_encoder = True
-        self.spatial_encoder_model = psp_encoders.GradualStyleEncoder(text_num=text_num).cuda()
+        self.spatial_encoder_model = psp_encoders.GradualStyleEncoder(text_num=text_num).to(get_module_device(self))
 
     def save(self, ckpt_path):
         torch.save({"string_to_token": self.string_to_token_dict,
@@ -201,7 +203,7 @@ class EmbeddingManager(nn.Module):
         tmp = ckpt['string_to_param']
         # for i in tmp.keys():
         #     tmp[i] = torch.cat([tmp[i], torch.zeros(4, 1280)], dim=0)
-        self.string_to_param_dict = tmp.cuda()
+        self.string_to_param_dict = tmp.to(get_module_device(self))
         # self.string_to_param_dict = ckpt["string_to_param"]
 
     def get_embedding_norms_squared(self):

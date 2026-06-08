@@ -19,6 +19,7 @@ from pytorch_lightning.utilities.distributed import rank_zero_only
 from pytorch_lightning.utilities import rank_zero_info
 
 from ldm.data.base import Txt2ImgIterableBaseDataset
+from ldm.device_utils import build_single_device_accelerator, get_torch_device
 from ldm.util import instantiate_from_config
 
 
@@ -505,12 +506,17 @@ class ImageLogger(Callback):
 class CUDACallback(Callback):
     # see https://github.com/SeanNaren/minGPT/blob/master/mingpt/callback.py
     def on_train_epoch_start(self, trainer, pl_module):
+        if not torch.cuda.is_available():
+            self.start_time = time.time()
+            return
         # Reset the memory use counter
         torch.cuda.reset_peak_memory_stats(trainer.root_gpu)
         torch.cuda.synchronize(trainer.root_gpu)
         self.start_time = time.time()
 
     def on_train_epoch_end(self, trainer, pl_module):
+        if not torch.cuda.is_available():
+            return
         torch.cuda.synchronize(trainer.root_gpu)
         max_memory = torch.cuda.max_memory_allocated(trainer.root_gpu) / 2 ** 20
         epoch_time = time.time() - self.start_time
@@ -637,8 +643,7 @@ if __name__ == "__main__":
         # logdir = os.path.join(opt.logdir, nowname)
         logdir=os.path.join(opt.logdir,'mask-checkpoints/%s-%s'%(opt.sample_name,opt.anomaly_name))
         if os.path.exists(logdir):
-            print('dir_exists!')
-            exit()
+            print(f"Reusing existing log directory: {logdir}")
 
     ckptdir = os.path.join(logdir, "checkpoints")
     cfgdir = os.path.join(logdir, "configs")
@@ -650,19 +655,26 @@ if __name__ == "__main__":
         cli = OmegaConf.from_dotlist(unknown)
         config = OmegaConf.merge(*configs, cli)
         lightning_config = config.pop("lightning", OmegaConf.create())
+        trainer = None
+        trainer_device = get_torch_device()
+        use_cuda_trainer = trainer_device.type == "cuda"
+        num_devices = 1
         # merge trainer cli with config
         trainer_config = lightning_config.get("trainer", OmegaConf.create())
-        # default to ddp
-        trainer_config["accelerator"] = "ddp"
+        if use_cuda_trainer:
+            trainer_config["accelerator"] = "ddp"
         for k in nondefault_trainer_args(opt):
             trainer_config[k] = getattr(opt, k)
-        if not "gpus" in trainer_config:
-            del trainer_config["accelerator"]
-            cpu = True
-        else:
+        if use_cuda_trainer:
+            if "gpus" not in trainer_config:
+                trainer_config["gpus"] = "0,"
             gpuinfo = trainer_config["gpus"]
             print(f"Running on GPUs {gpuinfo}")
-            cpu = False
+            num_devices = len(str(gpuinfo).strip(",").split(','))
+        else:
+            trainer_config.pop("accelerator", None)
+            trainer_config.pop("gpus", None)
+            print(f"Running on device {trainer_device}")
         trainer_opt = argparse.Namespace(**trainer_config)
         lightning_config.trainer = trainer_config
 
@@ -693,6 +705,8 @@ if __name__ == "__main__":
             model.log_loss=True
         # trainer and callbacks
         trainer_kwargs = dict()
+        if not use_cuda_trainer:
+            trainer_kwargs["accelerator"] = build_single_device_accelerator(trainer_device)
 
         # default logger configs
         default_logger_cfgs = {
@@ -845,10 +859,6 @@ if __name__ == "__main__":
 
         # configure learning rate
         bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate
-        if not cpu:
-            ngpu = len(lightning_config.trainer.gpus.strip(",").split(','))
-        else:
-            ngpu = 1
         if 'accumulate_grad_batches' in lightning_config.trainer:
             accumulate_grad_batches = lightning_config.trainer.accumulate_grad_batches
         else:
@@ -856,10 +866,10 @@ if __name__ == "__main__":
         print(f"accumulate_grad_batches = {accumulate_grad_batches}")
         lightning_config.trainer.accumulate_grad_batches = accumulate_grad_batches
         if opt.scale_lr:
-            model.learning_rate = accumulate_grad_batches * ngpu * bs * base_lr
+            model.learning_rate = accumulate_grad_batches * num_devices * bs * base_lr
             print(
-                "Setting learning rate to {:.2e} = {} (accumulate_grad_batches) * {} (num_gpus) * {} (batchsize) * {:.2e} (base_lr)".format(
-                    model.learning_rate, accumulate_grad_batches, ngpu, bs, base_lr))
+                "Setting learning rate to {:.2e} = {} (accumulate_grad_batches) * {} (num_devices) * {} (batchsize) * {:.2e} (base_lr)".format(
+                    model.learning_rate, accumulate_grad_batches, num_devices, bs, base_lr))
         else:
             model.learning_rate = base_lr
             print("++++ NOT USING LR SCALING ++++")
@@ -896,7 +906,7 @@ if __name__ == "__main__":
         if not opt.no_test and not trainer.interrupted:
             trainer.test(model, data)
     except Exception:
-        if opt.debug and trainer.global_rank == 0:
+        if opt.debug and trainer is not None and trainer.global_rank == 0:
             try:
                 import pudb as debugger
             except ImportError:
@@ -905,10 +915,10 @@ if __name__ == "__main__":
         raise
     finally:
         # move newly created debug project to debug_runs
-        if opt.debug and not opt.resume and trainer.global_rank == 0:
+        if trainer is not None and opt.debug and not opt.resume and trainer.global_rank == 0:
             dst, name = os.path.split(logdir)
             dst = os.path.join(dst, "debug_runs", name)
             os.makedirs(os.path.split(dst)[0], exist_ok=True)
             os.rename(logdir, dst)
-        if trainer.global_rank == 0:
+        if trainer is not None and trainer.global_rank == 0:
             print(trainer.profiler.summary())

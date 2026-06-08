@@ -11,6 +11,7 @@ import torchvision
 from torchvision import transforms
 from torchvision.utils import save_image
 from ldm.data.personalized import Personalized_mvtec_mask
+from ldm.device_utils import get_torch_device
 def load_model_from_config(config, ckpt, verbose=False):
     print(f"Loading model from {ckpt}")
     pl_sd = torch.load(ckpt, map_location="cpu")
@@ -107,8 +108,8 @@ if __name__ == "__main__":
     model = load_model_from_config(config, actual_resume)
     sample_name=opt.sample_name
     anomaly_name=opt.anomaly_name
+    device = get_torch_device()
     model.embedding_manager.load('logs/mask-checkpoints/%s-%s/checkpoints/embeddings.pt'%(sample_name,anomaly_name))
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     model = model.to(device)
     sampler = DDIMSampler(model)
     cnt=0

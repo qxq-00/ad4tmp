@@ -20,6 +20,7 @@ from tqdm import tqdm
 from torchvision.utils import make_grid
 from pytorch_lightning.utilities.distributed import rank_zero_only
 
+from ldm.device_utils import get_torch_device
 from ldm.util import log_txt_as_img, exists, default, ismap, isimage, mean_flat, count_params, instantiate_from_config
 from ldm.modules.ema import LitEma
 from ldm.modules.distributions.distributions import normal_kl, DiagonalGaussianDistribution
@@ -118,7 +119,8 @@ class DDPM(pl.LightningModule):
         self.loss_type = loss_type
 
         self.learn_logvar = learn_logvar
-        self.logvar = torch.full(fill_value=logvar_init, size=(self.num_timesteps,),device='cuda')
+        device = get_torch_device()
+        self.logvar = torch.full(fill_value=logvar_init, size=(self.num_timesteps,), device=device)
         if self.learn_logvar:
             self.logvar = nn.Parameter(self.logvar, requires_grad=True)
 
@@ -1665,7 +1667,7 @@ class LatentDiffusion(DDPM):
     def test(self):
         from torchvision.utils import save_image
         for i in range(1,1000,4):
-            z=torch.load('generated_dataset/tmp/%d.pt'%i).cuda()
+            z = torch.load('generated_dataset/tmp/%d.pt' % i, map_location=self.device).to(self.device)
             x_samples = self.decode_first_stage(z.to(self.device))
             save_image(x_samples,'generated_dataset/tmp/0-%d.jpg'%i,normalize=True)
         exit()

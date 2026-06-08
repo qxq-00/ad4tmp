@@ -6,6 +6,16 @@ from torch.utils.data import DataLoader
 import os
 from torchvision.models import resnet34
 import torch.nn as nn
+
+
+def pick_device():
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
         return param_group['lr']
@@ -26,8 +36,8 @@ def test(args,obj_name, model,anomaly_names):
 
     for i_batch, sample_batched in enumerate(dataloader):
         image, label = sample_batched
-        image = image.cuda()
-        label = label.cuda()
+        image = image.to(args.device)
+        label = label.to(args.device)
         y_pred = model(image)
         prediction = torch.argmax(y_pred, 1)
         correct = (prediction == label).sum().float()
@@ -35,6 +45,7 @@ def test(args,obj_name, model,anomaly_names):
 
 
 def test_on_device(obj_names, args):
+    evaluated = 0
 
     if not os.path.exists(args.checkpoint_path):
         os.makedirs(args.checkpoint_path)
@@ -43,14 +54,27 @@ def test_on_device(obj_names, args):
     for obj_name in obj_names:
         print(obj_name)
         run_name = obj_name
+        object_root = os.path.join(args.generated_data_path, obj_name)
+        ckpt_path = os.path.join(args.checkpoint_path, run_name + '.pckl')
+        if not os.path.isdir(object_root):
+            print("generated data not found:", object_root)
+            continue
+        if not os.path.exists(ckpt_path):
+            print("checkpoint not found:", ckpt_path)
+            continue
         dataset = MVTec_classification_train(args,obj_name)
         class_num=dataset.class_num()
         anomaly_names =dataset.return_anomaly_names()
         model = resnet34(pretrained=True, progress=True)
         model.fc = nn.Linear(model.fc.in_features, class_num)
-        model=model.cuda()
-        model.load_state_dict(torch.load(os.path.join(args.checkpoint_path,run_name+'.pckl')))
+        model = model.to(args.device)
+        model.load_state_dict(
+            torch.load(ckpt_path, map_location=args.device)
+        )
         test(args,obj_name, model, anomaly_names)
+        evaluated += 1
+    if evaluated == 0:
+        print("No classification runs were executed. Check generated_data_path and checkpoint_path.")
 
 if __name__=="__main__":
     import argparse
@@ -70,6 +94,8 @@ if __name__=="__main__":
     parser.add_argument('--checkpoint_path', default='checkpoints/classification', type=str)
 
     args = parser.parse_args()
+    args.device = pick_device()
+    print("Using device:", args.device)
 
     obj_batch =  [
                     'bottle',

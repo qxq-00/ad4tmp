@@ -11,6 +11,16 @@ from sklearn.metrics import roc_auc_score, average_precision_score
 from unet_utils.model_unet import DiscriminativeSubNetwork
 import os
 from unet_utils.au_pro_util import calculate_au_pro
+
+
+def pick_device():
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
         return param_group['lr']
@@ -46,7 +56,7 @@ def test(args,obj_name, model_seg):
 
     for i_batch, sample_batched in enumerate(dataloader):
 
-        gray_batch = sample_batched["image"].cuda()
+        gray_batch = sample_batched["image"].to(args.device)
         gray_batch=gray_batch[:,[2,1,0],:,:]
 
         is_normal = sample_batched["has_anomaly"].detach().numpy()[0 ,0]
@@ -110,7 +120,7 @@ def train_on_device(obj_names, args):
         run_name = obj_name
 
         model_seg = DiscriminativeSubNetwork(in_channels=3, out_channels=2)
-        model_seg.cuda()
+        model_seg = model_seg.to(args.device)
         model_seg.apply(weights_init)
 
         optimizer = torch.optim.Adam([
@@ -130,8 +140,8 @@ def train_on_device(obj_names, args):
             model_seg.train()
             print("Epoch: "+str(epoch))
             for i_batch, sample_batched in enumerate(dataloader):
-                aug_gray_batch = sample_batched["image"].cuda()
-                anomaly_mask = sample_batched["mask"].cuda()
+                aug_gray_batch = sample_batched["image"].to(args.device)
+                anomaly_mask = sample_batched["mask"].to(args.device)
                 out_mask = model_seg(aug_gray_batch)
                 out_mask_sm = torch.softmax(out_mask, dim=1)
                 segment_loss = loss_focal(out_mask_sm, anomaly_mask)
@@ -166,6 +176,8 @@ if __name__=="__main__":
     parser.add_argument('--reverse', action='store_true',default=False)
     parser.add_argument('--data_name',type=str, default='text_inversion')
     args = parser.parse_args()
+    args.device = pick_device()
+    print("Using device:", args.device)
 
     obj_batch =  [
                     'bottle',
@@ -192,9 +204,7 @@ if __name__=="__main__":
     else:
         picked_classes = obj_batch
 
-    with torch.cuda.device(args.gpu_id):
-        train_on_device(picked_classes, args)
+    train_on_device(picked_classes, args)
 #python train-unet.py --data_path $path_to_the_generated_data  --save_path ./ --mvtec_path=$path_to_mvtec --sample_name=capsule
-
 
 

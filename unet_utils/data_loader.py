@@ -6,6 +6,29 @@ import cv2
 from torchvision import transforms
 import random
 from PIL import Image
+
+
+def resolve_mask_path(mask_dir, image_file_name):
+    stem = os.path.splitext(image_file_name)[0]
+    prefix = stem.split("-")[0]
+    candidates = [
+        os.path.join(mask_dir, stem + "_mask.png"),
+        os.path.join(mask_dir, prefix + "_mask.png"),
+        os.path.join(mask_dir, stem + ".png"),
+        os.path.join(mask_dir, prefix + ".png"),
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+
+    for file_name in os.listdir(mask_dir):
+        if file_name.startswith(prefix + "_mask"):
+            return os.path.join(mask_dir, file_name)
+    raise FileNotFoundError(
+        f"Could not find mask for {image_file_name} under {mask_dir}"
+    )
+
+
 class MVTecDRAEMTestDataset_partial(Dataset):
 
     def __init__(self, root_dir, resize_shape=None):
@@ -57,11 +80,7 @@ class MVTecDRAEMTestDataset_partial(Dataset):
         else:
             mask_path = os.path.join(dir_path, '../../ground_truth/')
             mask_path = os.path.join(mask_path, base_dir)
-            if 'mvtec' in img_path:
-                mask_file_name = file_name.split(".")[0]+"_mask.png"
-            else:
-                mask_file_name = file_name.split(".")[0] + ".png"
-            mask_path = os.path.join(mask_path, mask_file_name)
+            mask_path = resolve_mask_path(mask_path, file_name)
             image, mask = self.transform_image(img_path, mask_path)
             has_anomaly = np.array([1], dtype=np.float32)
 

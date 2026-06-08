@@ -221,9 +221,9 @@ class VisionTransformer(nn.Module):
 
         self.ln_post = LayerNorm(width)
         self.repeats=repeats
-        self.proj=[]
+        self.proj = nn.ParameterList()
         for i in range(repeats):
-            self.proj.append(nn.Parameter(scale * torch.randn(width, output_dim)).cuda())
+            self.proj.append(nn.Parameter(scale * torch.randn(width, output_dim)))
         self.resize=transforms.Resize((input_resolution,input_resolution))
     def forward(self, x: torch.Tensor):
         x=self.resize(x)

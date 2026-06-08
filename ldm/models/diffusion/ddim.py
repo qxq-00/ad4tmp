@@ -20,9 +20,14 @@ class DDIMSampler(object):
         self.resize_256=transforms.Resize([256,256])
 
     def register_buffer(self, name, attr):
+        if isinstance(attr, np.ndarray):
+            attr = torch.from_numpy(attr)
         if type(attr) == torch.Tensor:
-            if attr.device != torch.device("cuda"):
-                attr = attr.to(torch.device("cuda"))
+            if torch.is_floating_point(attr):
+                attr = attr.to(dtype=torch.float32)
+            target_device = self.model.device
+            if attr.device != target_device:
+                attr = attr.to(target_device)
         setattr(self, name, attr)
 
     def make_schedule(self, ddim_num_steps, ddim_discretize="uniform", ddim_eta=0., verbose=True):

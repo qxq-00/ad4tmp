@@ -9,7 +9,15 @@ import csv
 from sklearn.metrics import auc, roc_auc_score, average_precision_score, precision_recall_curve
 
 
-def test(obj_names, mvtec_path, checkpoint_path):
+def pick_device(gpu_id=0):
+    if torch.cuda.is_available():
+        return torch.device("cuda", gpu_id)
+    if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def test(obj_names, mvtec_path, checkpoint_path, device):
     obj_ap_pixel_list = []
     obj_auroc_pixel_list = []
     obj_ap_image_list = []
@@ -28,8 +36,9 @@ def test(obj_names, mvtec_path, checkpoint_path):
         if not os.path.exists(os.path.join(checkpoint_path, run_name+".pckl")):
             print(os.path.join(checkpoint_path, run_name+".pckl"), 'not exists')
             continue
-        model_seg.load_state_dict(torch.load(os.path.join(checkpoint_path, run_name+".pckl"), map_location='cuda:0'))
-        model_seg.cuda()
+        ckpt_file = os.path.join(checkpoint_path, run_name + ".pckl")
+        model_seg.load_state_dict(torch.load(ckpt_file, map_location=device))
+        model_seg.to(device)
         model_seg.eval()
         dataset = MVTecDRAEMTestDataset_partial(mvtec_path + '/'+obj_name + "/test/", resize_shape=[img_dim, img_dim])
         dataloader = DataLoader(dataset, batch_size=1,
@@ -47,7 +56,7 @@ def test(obj_names, mvtec_path, checkpoint_path):
 
         for i_batch, sample_batched in enumerate(dataloader):
 
-            gray_batch = sample_batched["image"].cuda()
+            gray_batch = sample_batched["image"].to(device)
             gray_batch=gray_batch[:,[2,1,0],:,:]
             is_normal = sample_batched["has_anomaly"].detach().numpy()[0 ,0]
             anomaly_score_gt.append(is_normal)
@@ -136,6 +145,9 @@ def test(obj_names, mvtec_path, checkpoint_path):
         with open("result.csv", "a") as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow([obj_name,datas[0],datas[1], datas[2],datas[3], datas[4],datas[5],datas[6]])
+    if not obj_auroc_image_list:
+        print("No localization checkpoints were found under:", checkpoint_path)
+        return
     print("AUC Image mean:  " + str(np.mean(obj_auroc_image_list)))
     print("AP Image mean:  " + str(np.mean(obj_ap_image_list)))
     print("AUC Pixel mean:  " + str(np.mean(obj_auroc_pixel_list)))
@@ -173,6 +185,6 @@ if __name__=="__main__":
         obj_list = [args.sample_name]
 
 
-    with torch.cuda.device(args.gpu_id):
-        test(obj_list,args.mvtec_path, args.checkpoint_path)
-
+    device = pick_device(args.gpu_id)
+    print("Using device:", device)
+    test(obj_list, args.mvtec_path, args.checkpoint_path, device)

@@ -6,6 +6,16 @@ from torch.utils.data import DataLoader
 import os
 from torchvision.models import resnet34
 import torch.nn as nn
+
+
+def pick_device():
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
         return param_group['lr']
@@ -26,8 +36,8 @@ def test(args,obj_name, model,anomaly_names):
 
     for i_batch, sample_batched in enumerate(dataloader):
         image, label = sample_batched
-        image = image.cuda()
-        label = label.cuda()
+        image = image.to(args.device)
+        label = label.to(args.device)
         y_pred = model(image)
         prediction = torch.argmax(y_pred, 1)
         correct = (prediction == label).sum().float()
@@ -49,7 +59,7 @@ def train_on_device(obj_names, args):
         anomaly_names =dataset.return_anomaly_names()
         model = resnet34(pretrained=True, progress=True)
         model.fc = nn.Linear(model.fc.in_features, class_num)
-        model=model.cuda()
+        model = model.to(args.device)
 
         optimizer = torch.optim.Adam([{"params": model.parameters(), "lr": args.lr}])
 
@@ -64,8 +74,8 @@ def train_on_device(obj_names, args):
             print("Epoch: "+str(epoch),end=' ')
             for i_batch, sample_batched in enumerate(dataloader):
                 image,label=sample_batched
-                image=image.cuda()
-                label=label.cuda()
+                image = image.to(args.device)
+                label = label.to(args.device)
                 y_pred=model(image)
                 loss=criterion(y_pred,label)
                 optimizer.zero_grad()
@@ -97,6 +107,8 @@ if __name__=="__main__":
     parser.add_argument('--checkpoint_path', default='checkpoints/classification', type=str)
 
     args = parser.parse_args()
+    args.device = pick_device()
+    print("Using device:", args.device)
 
     obj_batch =  [
                     'bottle',

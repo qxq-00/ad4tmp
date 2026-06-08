@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from main import instantiate_from_config
 from ldm.models.diffusion.ddim import DDIMSampler
+from ldm.device_utils import get_torch_device
 def load_model_from_config(config, ckpt, verbose=False):
     print(f"Loading model from {ckpt}")
     pl_sd = torch.load(ckpt, map_location="cpu")
@@ -76,7 +77,7 @@ if __name__ == "__main__":
     model.load_state_dict(torch.load("models/ldm/inpainting_big/last.ckpt")["state_dict"],
                           strict=False)
 
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    device = get_torch_device()
     model = model.to(device)
     sampler = DDIMSampler(model)
 

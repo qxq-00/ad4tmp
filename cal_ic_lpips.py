@@ -11,15 +11,16 @@ from torch.utils import data
 import os
 from PIL import Image
 import numpy as np
+from ldm.device_utils import get_torch_device
 
-lpips_fn = lpips.LPIPS(net='vgg').cuda()
+device = get_torch_device()
+lpips_fn = lpips.LPIPS(net='vgg').to(device)
 preprocess = transforms.Compose([
     transforms.Resize([256, 256]),
     transforms.ToTensor(),
     transforms.Normalize(
         mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
 ])
-device='cuda'
 def ic_lpips(mvtec_path,gen_path,sample_name,anomaly_name):
     print(sample_name,anomaly_name)
     tar_path = '%s/%s/%s' % (gen_path,sample_name, anomaly_name)

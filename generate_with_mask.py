@@ -13,11 +13,11 @@ import torchvision
 from torchvision import transforms
 from torchvision.utils import save_image
 from ldm.data.personalized import Positive_sample_with_generated_mask
+from ldm.device_utils import get_torch_device, seed_torch
 import random
 
 def setup_seed(seed):
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    seed_torch(seed)
     np.random.seed(seed)
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
@@ -111,11 +111,11 @@ if __name__ == "__main__":
     model = load_model_from_config(config, actual_resume)
     sample_name=opt.sample_name
     anomaly_name=opt.anomaly_name
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    device = get_torch_device()
     model = model.to(device)
     sampler = DDIMSampler(model)
     model.prepare_spatial_encoder(optimze_together=True)
-    ckpt = torch.load('logs/anomaly-checkpoints/checkpoints/spatial_encoder.pt')
+    ckpt = torch.load('logs/anomaly-checkpoints/checkpoints/spatial_encoder.pt', map_location=device)
     model.embedding_manager.spatial_encoder_model.load_state_dict(ckpt)
     model.embedding_manager.load('logs/anomaly-checkpoints/checkpoints/embeddings.pt')
     dataset = Positive_sample_with_generated_mask(opt.data_root,sample_name, anomaly_name, repeats=1, size=256, set='train',

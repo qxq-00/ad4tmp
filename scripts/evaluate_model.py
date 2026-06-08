@@ -15,6 +15,7 @@ from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.models.diffusion.plms import PLMSSampler
 from ldm.data.personalized import PersonalizedBase
 from evaluation.clip_eval import LDMCLIPEvaluator
+from ldm.device_utils import get_torch_device
 
 def load_model_from_config(config, ckpt, verbose=False):
     print(f"Loading model from {ckpt}")
@@ -29,7 +30,7 @@ def load_model_from_config(config, ckpt, verbose=False):
         print("unexpected keys:")
         print(u)
 
-    model.cuda()
+    model = model.to(get_torch_device())
     model.eval()
     return model
 
@@ -69,7 +70,7 @@ if __name__ == "__main__":
     model = load_model_from_config(config, opt.ckpt_path)  # TODO: check path
     model.embedding_manager.load(opt.embedding_path)
 
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    device = get_torch_device()
     model = model.to(device)
 
     evaluator = LDMCLIPEvaluator(device)

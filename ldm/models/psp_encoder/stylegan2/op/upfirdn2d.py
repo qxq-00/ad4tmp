@@ -1,17 +1,20 @@
 import os
 
 import torch
+from torch.nn import functional as F
 from torch.autograd import Function
 from torch.utils.cpp_extension import load
 
 module_path = os.path.dirname(__file__)
-upfirdn2d_op = load(
-    'upfirdn2d',
-    sources=[
-        os.path.join(module_path, 'upfirdn2d.cpp'),
-        os.path.join(module_path, 'upfirdn2d_kernel.cu'),
-    ],
-)
+upfirdn2d_op = None
+if torch.cuda.is_available():
+    upfirdn2d_op = load(
+        'upfirdn2d',
+        sources=[
+            os.path.join(module_path, 'upfirdn2d.cpp'),
+            os.path.join(module_path, 'upfirdn2d_kernel.cu'),
+        ],
+    )
 
 
 class UpFirDn2dBackward(Function):
@@ -140,6 +143,13 @@ class UpFirDn2d(Function):
 
 
 def upfirdn2d(input, kernel, up=1, down=1, pad=(0, 0)):
+    if upfirdn2d_op is None:
+        out = input.permute(0, 2, 3, 1)
+        out = upfirdn2d_native(
+            out, kernel, up, up, down, down, pad[0], pad[1], pad[0], pad[1]
+        )
+        return out.permute(0, 3, 1, 2)
+
     out = UpFirDn2d.apply(
         input, kernel, (up, up), (down, down), (pad[0], pad[1], pad[0], pad[1])
     )

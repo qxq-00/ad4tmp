@@ -1,0 +1,14 @@
+lightning:
+  modelcheckpoint:
+    params:
+      every_n_train_steps: 1000
+  callbacks:
+    image_logger:
+      target: train_mask.ImageLogger
+      params:
+        batch_frequency: 500
+        max_images: 8
+        increase_log_steps: false
+  trainer:
+    benchmark: true
+    max_steps: 5000

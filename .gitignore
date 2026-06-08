@@ -2,3 +2,8 @@
 *.pt
 *.pth
 *.safetensors
+
+.DS_Store
+**/.DS_Store
+
+.venv/
